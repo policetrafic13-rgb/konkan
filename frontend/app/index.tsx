@@ -58,6 +58,7 @@ type GameState = {
 };
 const STORAGE_KEY = "konkan_state_v1";
 const THEME_KEY = "konkan_theme_v1";
+const SAVED_PLAYERS_KEY = "konkan_saved_players_v1";
 
 const QUICK_SCORES = [-30, -60, 25, 100, 125, 200];
 
@@ -94,16 +95,27 @@ export default function Index() {
   // Confirm modal for reset
   const [confirmReset, setConfirmReset] = useState(false);
 
+  // Saved players directory (permanent)
+  const [savedPlayers, setSavedPlayers] = useState<string[]>([]);
+  const [newSavedName, setNewSavedName] = useState("");
+
   // Load state
   useEffect(() => {
     (async () => {
       const saved = await storage.getItem<string>(STORAGE_KEY, "");
       const th = await storage.getItem<string>(THEME_KEY, "");
+      const sp = await storage.getItem<string>(SAVED_PLAYERS_KEY, "");
       if (th === "light" || th === "dark") setThemeMode(th);
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
           if (parsed && Array.isArray(parsed.players)) setState(parsed);
+        } catch {}
+      }
+      if (sp) {
+        try {
+          const parsed = JSON.parse(sp);
+          if (Array.isArray(parsed)) setSavedPlayers(parsed.filter((x) => typeof x === "string"));
         } catch {}
       }
       setHydrated(true);
@@ -120,6 +132,11 @@ export default function Index() {
     if (!hydrated) return;
     storage.setItem(THEME_KEY, themeMode);
   }, [themeMode, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    storage.setItem(SAVED_PLAYERS_KEY, JSON.stringify(savedPlayers));
+  }, [savedPlayers, hydrated]);
 
   // Totals
   const totals = useMemo(() => {
@@ -208,6 +225,60 @@ export default function Index() {
     if (state.rounds.length === 0) return;
     haptic();
     setState((s) => ({ ...s, rounds: s.rounds.slice(0, -1) }));
+  };
+
+  // ---- Saved Players Directory ----
+  const addSavedPlayer = (raw: string) => {
+    const name = raw.trim();
+    if (!name) return;
+    const exists = savedPlayers.some((n) => n.toLowerCase() === name.toLowerCase());
+    if (exists) {
+      setNewSavedName("");
+      return;
+    }
+    haptic();
+    setSavedPlayers((s) => [...s, name]);
+    setNewSavedName("");
+  };
+
+  const removeSavedPlayer = (name: string) => {
+    haptic();
+    setSavedPlayers((s) => s.filter((n) => n !== name));
+  };
+
+  const togglePlayerInGame = (name: string) => {
+    haptic();
+    const idx = state.players.findIndex(
+      (pl) => pl.name.trim().toLowerCase() === name.trim().toLowerCase()
+    );
+    if (idx !== -1) {
+      // Remove from game
+      setState((s) => {
+        if (s.players.length > 4) {
+          return { ...s, players: s.players.filter((_, i) => i !== idx) };
+        }
+        // Cannot remove below 4 — clear the slot instead
+        return {
+          ...s,
+          players: s.players.map((pl, i) => (i === idx ? { ...pl, name: "" } : pl)),
+        };
+      });
+      return;
+    }
+    // Add to game: fill first empty slot; else append if < 8
+    setState((s) => {
+      const emptyIdx = s.players.findIndex((pl) => pl.name.trim() === "");
+      if (emptyIdx !== -1) {
+        return {
+          ...s,
+          players: s.players.map((pl, i) => (i === emptyIdx ? { ...pl, name } : pl)),
+        };
+      }
+      if (s.players.length < 8) {
+        return { ...s, players: [...s.players, { id: p(), name }] };
+      }
+      return s;
+    });
   };
 
   const advanceToNextPlayer = (currentId: string) => {
@@ -321,6 +392,12 @@ export default function Index() {
           onSetName={setPlayerName}
           onThreshold={setThreshold}
           onStart={startGame}
+          savedPlayers={savedPlayers}
+          newSavedName={newSavedName}
+          setNewSavedName={setNewSavedName}
+          onAddSaved={addSavedPlayer}
+          onRemoveSaved={removeSavedPlayer}
+          onTogglePlayerInGame={togglePlayerInGame}
         />
       ) : (
         <ScoreboardScreen
@@ -469,6 +546,12 @@ function SetupScreen({
   onSetName,
   onThreshold,
   onStart,
+  savedPlayers,
+  newSavedName,
+  setNewSavedName,
+  onAddSaved,
+  onRemoveSaved,
+  onTogglePlayerInGame,
 }: {
   C: typeof PALETTES.dark;
   state: GameState;
@@ -477,12 +560,23 @@ function SetupScreen({
   onSetName: (id: string, name: string) => void;
   onThreshold: (t: 700 | 1000) => void;
   onStart: () => void;
+  savedPlayers: string[];
+  newSavedName: string;
+  setNewSavedName: (v: string) => void;
+  onAddSaved: (v: string) => void;
+  onRemoveSaved: (v: string) => void;
+  onTogglePlayerInGame: (name: string) => void;
 }) {
   const styles = getStyles(C);
   const canStart =
     state.players.length >= 4 &&
     state.players.length <= 8 &&
     state.players.every((pl) => pl.name.trim().length > 0);
+
+  const isSelected = (name: string) =>
+    state.players.some(
+      (pl) => pl.name.trim().toLowerCase() === name.trim().toLowerCase()
+    );
 
   return (
     <KeyboardAvoidingView
@@ -520,6 +614,98 @@ function SetupScreen({
                 </TouchableOpacity>
               );
             })}
+          </View>
+        </View>
+
+        <View style={[styles.card, { marginTop: 16 }]}>
+          <View style={{ flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between" }}>
+            <Text style={styles.sectionTitle}>الأصدقاء المحفوظون ({savedPlayers.length})</Text>
+            {savedPlayers.length > 0 && (
+              <Text style={styles.hint}>اضغط لإضافة/إزالة من اللعبة</Text>
+            )}
+          </View>
+
+          {savedPlayers.length === 0 ? (
+            <Text style={[styles.hint, { marginTop: 4 }]}>
+              أضف أسماء أصدقائك الدائمين هنا لتختارهم بضغطة زر في كل لعبة.
+            </Text>
+          ) : (
+            <View style={styles.savedGrid}>
+              {savedPlayers.map((name) => {
+                const selected = isSelected(name);
+                return (
+                  <View key={name} style={styles.savedPillWrap}>
+                    <TouchableOpacity
+                      onPress={() => onTogglePlayerInGame(name)}
+                      style={[
+                        styles.savedPill,
+                        selected && {
+                          backgroundColor: C.primary,
+                          borderColor: C.primary,
+                        },
+                      ]}
+                      testID={`saved-player-pill-${name}`}
+                    >
+                      {selected && (
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={14}
+                          color={C.bg === "#07100D" ? "#0B120F" : "#FFFFFF"}
+                        />
+                      )}
+                      <Text
+                        style={[
+                          styles.savedPillText,
+                          {
+                            color: selected
+                              ? C.bg === "#07100D"
+                                ? "#0B120F"
+                                : "#FFFFFF"
+                              : C.text,
+                          },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {name}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => onRemoveSaved(name)}
+                      style={styles.savedPillDelete}
+                      testID={`saved-player-delete-${name}`}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    >
+                      <Ionicons name="close-circle" size={18} color={C.danger} />
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          <View style={styles.savedAddRow}>
+            <TextInput
+              value={newSavedName}
+              onChangeText={setNewSavedName}
+              onSubmitEditing={() => onAddSaved(newSavedName)}
+              placeholder="أضف اسم صديق دائم"
+              placeholderTextColor={C.subtext}
+              style={[styles.playerInput, { flex: 1 }]}
+              returnKeyType="done"
+              testID="saved-player-name-input"
+            />
+            <TouchableOpacity
+              onPress={() => onAddSaved(newSavedName)}
+              disabled={newSavedName.trim().length === 0}
+              style={[
+                styles.addBtn,
+                newSavedName.trim().length === 0 && { opacity: 0.4 },
+              ]}
+              testID="saved-player-add-button"
+            >
+              <Ionicons name="bookmark" size={16} color={C.primary} />
+              <Text style={[styles.addBtnText, { color: C.primary }]}>حفظ</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -832,6 +1018,26 @@ function getStyles(C: typeof PALETTES.dark) {
     },
     hint: {
       fontSize: 12, color: C.subtext, textAlign: "right", writingDirection: "rtl",
+    },
+    savedGrid: {
+      flexDirection: "row-reverse", flexWrap: "wrap", gap: 8, marginTop: 4,
+    },
+    savedPillWrap: {
+      flexDirection: "row-reverse", alignItems: "center",
+    },
+    savedPill: {
+      flexDirection: "row-reverse", alignItems: "center", gap: 6,
+      paddingHorizontal: 12, paddingVertical: 8,
+      backgroundColor: C.surface2, borderRadius: 20,
+      borderWidth: 1, borderColor: C.border, maxWidth: 160,
+    },
+    savedPillText: { fontSize: 13, fontWeight: "700" },
+    savedPillDelete: {
+      marginStart: -6, marginEnd: 2,
+      width: 22, height: 22, alignItems: "center", justifyContent: "center",
+    },
+    savedAddRow: {
+      flexDirection: "row-reverse", alignItems: "center", gap: 8, marginTop: 12,
     },
     startBtn: {
       flexDirection: "row-reverse", alignItems: "center", justifyContent: "center",
