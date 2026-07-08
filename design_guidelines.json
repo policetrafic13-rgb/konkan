@@ -1,0 +1,76 @@
+{
+  "theme": "dark_and_light",
+  "typography": {
+    "headings": "Cairo, sans-serif",
+    "body": "Tajawal, sans-serif",
+    "strategy": "Use 'Cairo' (font-weight: 700/900) with tracking-tight for totals, headings, and scores. Use 'Tajawal' (font-weight: 400/500) for player names and UI labels. Numbers must strictly remain LTR (dir='ltr') even within RTL layout to ensure proper readable digit format (e.g. '-30' instead of '30-')."
+  },
+  "colors": {
+    "dark": {
+      "background": "#07100D",
+      "surface": "#131D18",
+      "primary": "#D4AF37",
+      "danger": "#E63946",
+      "text": "#E8ECEA"
+    },
+    "light": {
+      "background": "#F7F9F8",
+      "surface": "#FFFFFF",
+      "primary": "#1C4E40",
+      "danger": "#D62828",
+      "text": "#1A1D1C"
+    },
+    "strategy": "Archetype: Luxury (Dark) and Swiss High-Contrast (Light). Use 'Primary/Gold' for highlighting the winning player (lowest score) and 'Danger/Red' for the losing player (closest to threshold). Avoid pure black/white to maintain an elegant, premium casino-like vibe."
+  },
+  "layouts": {
+    "rtl_guidelines": "Ensure the main container or html tag uses `dir=\"rtl\"`. Reverse all directional icons. Text is right-aligned (`text-right`). Do not use symmetrical margins; use Tailwind logical properties (`ms-`, `me-`, `ps-`, `pe-`).",
+    "scoreboard_grid": "Horizontal scrolling table container (`overflow-x-auto`) to support 4-8 players without squishing. Sticky top header for Player Names & Totals. Dense padding (`p-2` or `p-3`). Highlight Logic: Apply a subtle background tint (`bg-primary/10`) and a top/bottom border (`border-primary`) for the leader's column. Apply `bg-danger/10` to the loser's column.",
+    "modal_quick_add": "Grid of large, tap-friendly chips (2 columns, 3 rows) for standard inputs [-30, -60, 25, 100, 125, 200]. Min height `h-14` or `h-16` for mobile touch targets."
+  },
+  "components": {
+    "player_setup": "Dynamic list of players with an elegant 'Add Player' input. Use a clear 'X' icon or swipe-to-delete for removal. Segmented control or radio group for Threshold (700 or 1000).",
+    "score_entry": "Mobile-friendly Bottom Drawer or centered Modal. Contains the selected player's name prominently, quick-add chips, and a custom number input field. Include a large submit button.",
+    "round_history": "Rows within the grid showing historical scores. Add a sticky 'Undo Last Round' button at the bottom of the scoreboard or as a Floating Action Button (FAB).",
+    "theme_toggle": "A crisp, tactile switch or icon button in the top navigation bar to toggle between Light and Dark mode."
+  },
+  "motion": {
+    "strategy": "Snappy and tactile. Use subtle scaling (`active:scale-95`) on buttons and chips to simulate physical touch. Use framer-motion or CSS transitions for Drawer slide-up and list item removal."
+  },
+  "accessibility": {
+    "contrast": "Ensure text over gold/red highlights remains high-contrast.",
+    "touch_targets": "Minimum 48x48px for all mobile tap targets, especially the quick-add score chips."
+  },
+  "media": {
+    "image_urls": {
+      "background_empty_state": {
+        "url": "https://images.pexels.com/photos/6806644/pexels-photo-6806644.jpeg",
+        "description": "Person holding golden playing cards. Use at very low opacity (5-10%) in the background of the setup screen or empty states to reinforce the premium card game theme.",
+        "category": "background"
+      },
+      "hero_accent": {
+         "url": "https://images.pexels.com/photos/37727702/pexels-photo-37727702.jpeg",
+         "description": "Elegant focus on playing cards. Can be used for a splash screen or decorative top header.",
+         "category": "hero"
+      }
+    }
+  },
+  "instructions_to_main_agent": [
+    "Build as a mobile-first React web app using React JS (.js/.jsx files) and Tailwind CSS.",
+    "Implement a robust `localStorage` utility (via Custom Hook or Context) to persist game state (players, rounds history, threshold) preventing accidental data loss.",
+    "Include 'Cairo' and 'Tajawal' from Google Fonts and configure them in `tailwind.config.js`.",
+    "Ensure RTL is implemented perfectly. Arabic UI requires `dir=\"rtl\"`, but mathematical score blocks MUST use `dir=\"ltr\"` inside them so negatives render properly (e.g. '-30').",
+    "Calculate Highlights Dynamically: Compute totals array -> find min (leader) -> apply Gold accent classes. Find max (loser) -> apply Red accent classes.",
+    "Use Shadcn components where applicable, but rely on raw Tailwind for the complex, horizontally scrolling mobile grid layout.",
+    "Never use `transition: all`. Target specific properties for animations.",
+    "Add `data-testid` to all interactive elements (buttons, inputs, chips) for testing."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "Do not converge toward generic outputs. Create depth through layered design elements with z-index hierarchy.",
+    "Use 2-3x more spacing where possible. Cramped designs look cheap.",
+    "Avoid generic centered layouts; prioritize optical alignment.",
+    "NEVER use complete transparent background in header or overlays.",
+    "Use modern button styles (pill-shaped or slightly rounded) with interaction animations.",
+    "Use `sonner` for toast notifications (e.g. 'Round undone', 'Game reset').",
+    "Ensure the app container is NOT center-aligned via `.App { text-align: center; }`."
+  ]
+}
