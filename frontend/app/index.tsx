@@ -423,7 +423,7 @@ export default function Index() {
 
       {/* Game Over Overlay */}
       {gameOver && state.started && (
-        <View style={styles.gameOverBadge} pointerEvents="none">
+        <View style={[styles.gameOverBadge, { pointerEvents: "none" }]}>
           <View style={styles.gameOverInner}>
             <Ionicons name="trophy" size={22} color={C.primary} />
             <Text style={styles.gameOverText}>
