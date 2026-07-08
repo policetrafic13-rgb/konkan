@@ -210,6 +210,19 @@ export default function Index() {
     setState((s) => ({ ...s, rounds: s.rounds.slice(0, -1) }));
   };
 
+  const advanceToNextPlayer = (currentId: string) => {
+    const idx = state.players.findIndex((pl) => pl.id === currentId);
+    const next = state.players[idx + 1];
+    if (next) {
+      setEntryPlayer(next.id);
+      setEntryValue(String(roundDraft[next.id] ?? ""));
+    } else {
+      setEntryOpen(false);
+      setEntryPlayer(null);
+      setEntryValue("");
+    }
+  };
+
   const openEntry = (pid: string) => {
     haptic();
     setEntryPlayer(pid);
@@ -219,19 +232,22 @@ export default function Index() {
 
   const applyEntry = (val: number) => {
     if (!entryPlayer) return;
-    setRoundDraft((d) => ({ ...d, [entryPlayer]: val }));
-    setEntryValue(String(val));
+    haptic();
+    const current = entryPlayer;
+    setRoundDraft((d) => ({ ...d, [current]: val }));
+    advanceToNextPlayer(current);
   };
 
   const saveEntry = () => {
     if (!entryPlayer) return;
     const n = parseInt(entryValue, 10);
+    const current = entryPlayer;
     setRoundDraft((d) => ({
       ...d,
-      [entryPlayer]: isNaN(n) ? 0 : n,
+      [current]: isNaN(n) ? 0 : n,
     }));
     haptic();
-    setEntryOpen(false);
+    advanceToNextPlayer(current);
   };
 
   const clearEntry = () => {
@@ -336,6 +352,14 @@ export default function Index() {
                 ? `إدخال نقاط: ${state.players.find((x) => x.id === entryPlayer)?.name}`
                 : "إدخال نقاط"}
             </Text>
+            {entryPlayer && (() => {
+              const idx = state.players.findIndex((x) => x.id === entryPlayer);
+              return (
+                <Text style={[styles.label, { marginTop: -8, marginBottom: 12 }]}>
+                  {`لاعب ${idx + 1} من ${state.players.length} — سيتم الانتقال تلقائياً`}
+                </Text>
+              );
+            })()}
 
             <View style={styles.chipGrid}>
               {QUICK_SCORES.map((v) => (
@@ -364,7 +388,7 @@ export default function Index() {
             <TextInput
               value={entryValue}
               onChangeText={setEntryValue}
-              keyboardType="numbers-and-punctuation"
+              keyboardType="numeric"
               placeholder="مثال: 75 أو -15"
               placeholderTextColor={C.subtext}
               style={styles.input}
