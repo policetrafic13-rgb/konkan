@@ -17,6 +17,9 @@ import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { storage } from "@/src/utils/storage";
+import { useKonkanAssistant } from "@/src/hooks/useKonkanAssistant";
+import { AssistantHeaderButtons, AssistantBanner, AssistantSettingsModal } from "@/src/components/AssistantPanel";
+import { ScoreTable } from "@/src/components/ScoreTable";
 
 // ---------------- Theme ----------------
 type ThemeMode = "dark" | "light";
@@ -167,6 +170,65 @@ export default function Index() {
       (totals[pl.id] ?? 0) > (totals[max.id] ?? 0) ? pl : max
     , state.players[0]).id;
   }, [state.players, totals]);
+
+  // المساعد الصوتي + المزامنة مع السيرفر
+  const assistant = useKonkanAssistant({ state, setState, hydrated, savedPlayers, setSavedPlayers });
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // تعديل نقاط لاعب واحد في جولة محددة (بالضغط على الرقم في الجدول)
+  const [cellEdit, setCellEdit] = useState<{ roundId: string; playerId: string } | null>(null);
+  const [cellValue, setCellValue] = useState("");
+  const openCellEdit = (roundId: string, playerId: string) => {
+    const r = state.rounds.find((x) => x.id === roundId);
+    if (!r) return;
+    haptic();
+    setCellEdit({ roundId, playerId });
+    setCellValue(String(r.scores[playerId] ?? 0));
+  };
+  // تغيير اسم لاعب أثناء اللعبة (دون إعادة اللعبة)
+  const [renameId, setRenameId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const openRename = (playerId: string) => {
+    const pl = state.players.find((x) => x.id === playerId);
+    if (!pl) return;
+    haptic();
+    setRenameId(playerId);
+    setRenameValue(pl.name);
+  };
+  const renameTaken =
+    !!renameId &&
+    state.players.some(
+      (x) => x.id !== renameId && x.name.trim().toLowerCase() === renameValue.trim().toLowerCase()
+    );
+  const saveRename = () => {
+    const name = renameValue.trim().slice(0, 30);
+    if (!renameId || !name || renameTaken) return;
+    haptic();
+    const id = renameId;
+    setState((s) => ({
+      ...s,
+      players: s.players.map((x) => (x.id === id ? { ...x, name } : x)),
+    }));
+    setSavedPlayers((list) =>
+      list.some((n) => n.trim().toLowerCase() === name.toLowerCase()) ? list : [...list, name]
+    );
+    setRenameId(null);
+  };
+
+  const saveCellEdit = () => {
+    if (!cellEdit) return;
+    const n = parseInt(cellValue.replace("−", "-"), 10);
+    if (isNaN(n) || Math.abs(n) > 5000) return;
+    const { roundId, playerId } = cellEdit;
+    haptic();
+    setState((s) => ({
+      ...s,
+      rounds: s.rounds.map((r) =>
+        r.id === roundId ? { ...r, scores: { ...r.scores, [playerId]: n } } : r
+      ),
+    }));
+    setCellEdit(null);
+  };
 
   // ---------------- Actions ----------------
   const toggleTheme = () => {
@@ -364,17 +426,20 @@ export default function Index() {
 
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={toggleTheme}
-          style={styles.themeBtn}
-          testID="theme-toggle-button"
-        >
-          <Ionicons
-            name={themeMode === "dark" ? "sunny" : "moon"}
-            size={20}
-            color={C.primary}
-          />
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <TouchableOpacity
+            onPress={toggleTheme}
+            style={styles.themeBtn}
+            testID="theme-toggle-button"
+          >
+            <Ionicons
+              name={themeMode === "dark" ? "sunny" : "moon"}
+              size={20}
+              color={C.primary}
+            />
+          </TouchableOpacity>
+          <AssistantHeaderButtons C={C} a={assistant} onOpenSettings={() => setSettingsOpen(true)} />
+        </View>
         <View style={{ flex: 1, alignItems: "flex-end" }}>
           <Text style={styles.title}>حاسبة الكونكان السعودية</Text>
           <Text style={styles.subtitle}>
@@ -382,6 +447,8 @@ export default function Index() {
           </Text>
         </View>
       </View>
+
+      <AssistantBanner C={C} a={assistant} />
 
       {!state.started ? (
         <SetupScreen
@@ -412,8 +479,103 @@ export default function Index() {
           onSubmit={submitRound}
           onUndo={undoLastRound}
           onReset={() => setConfirmReset(true)}
+          onEditCell={openCellEdit}
+          onRenamePlayer={openRename}
         />
       )}
+
+      <AssistantSettingsModal
+        C={C}
+        a={assistant}
+        visible={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+      />
+
+      {/* Rename a player mid-game */}
+      <Modal visible={!!renameId} transparent animationType="fade" onRequestClose={() => setRenameId(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.confirmBox}>
+            <Text style={styles.sheetTitle}>تغيير اسم اللاعب</Text>
+            <TextInput
+              value={renameValue}
+              onChangeText={setRenameValue}
+              placeholder="الاسم الجديد"
+              placeholderTextColor={C.subtext}
+              style={styles.input}
+              autoFocus
+              maxLength={30}
+              onSubmitEditing={saveRename}
+              testID="rename-input"
+            />
+            {renameTaken && (
+              <Text style={[styles.subtitle, { color: C.danger, textAlign: "right", marginTop: 8 }]}>
+                هذا الاسم مستخدم عند لاعب آخر
+              </Text>
+            )}
+            <View style={[styles.sheetActions, { marginTop: 14 }]}>
+              <TouchableOpacity
+                style={[styles.btn, styles.btnGhost]}
+                onPress={() => setRenameId(null)}
+                testID="rename-cancel"
+              >
+                <Text style={[styles.btnText, { color: C.subtext }]}>إلغاء</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.btn, styles.btnPrimary, (!renameValue.trim() || renameTaken) && { opacity: 0.5 }]}
+                onPress={saveRename}
+                disabled={!renameValue.trim() || renameTaken}
+                testID="rename-save"
+              >
+                <Text style={[styles.btnText, { color: themeMode === "dark" ? "#0B120F" : "#FFFFFF" }]}>حفظ</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit a single score in a past round */}
+      <Modal visible={!!cellEdit} transparent animationType="fade" onRequestClose={() => setCellEdit(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.confirmBox}>
+            {(() => {
+              const roundIdx = cellEdit ? state.rounds.findIndex((r) => r.id === cellEdit.roundId) : -1;
+              const pl = cellEdit ? state.players.find((x) => x.id === cellEdit.playerId) : null;
+              return (
+                <Text style={styles.sheetTitle}>
+                  {`تعديل: ${pl?.name ?? ""} — الجولة ${roundIdx + 1}`}
+                </Text>
+              );
+            })()}
+            <TextInput
+              value={cellValue}
+              onChangeText={setCellValue}
+              keyboardType="numeric"
+              placeholder="مثال: 75 أو -15"
+              placeholderTextColor={C.subtext}
+              style={styles.input}
+              autoFocus
+              onSubmitEditing={saveCellEdit}
+              testID="edit-cell-input"
+            />
+            <View style={[styles.sheetActions, { marginTop: 14 }]}>
+              <TouchableOpacity
+                style={[styles.btn, styles.btnGhost]}
+                onPress={() => setCellEdit(null)}
+                testID="edit-cell-cancel"
+              >
+                <Text style={[styles.btnText, { color: C.subtext }]}>إلغاء</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.btn, styles.btnPrimary]}
+                onPress={saveCellEdit}
+                testID="edit-cell-save"
+              >
+                <Text style={[styles.btnText, { color: themeMode === "dark" ? "#0B120F" : "#FFFFFF" }]}>حفظ</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Score Entry Modal */}
       <Modal visible={entryOpen} transparent animationType="slide" onRequestClose={() => setEntryOpen(false)}>
@@ -788,6 +950,8 @@ function ScoreboardScreen({
   onSubmit,
   onUndo,
   onReset,
+  onEditCell,
+  onRenamePlayer,
 }: {
   C: typeof PALETTES.dark;
   state: GameState;
@@ -800,6 +964,8 @@ function ScoreboardScreen({
   onSubmit: () => void;
   onUndo: () => void;
   onReset: () => void;
+  onEditCell: (roundId: string, playerId: string) => void;
+  onRenamePlayer: (playerId: string) => void;
 }) {
   const styles = getStyles(C);
   const hasDraft = Object.keys(roundDraft).length > 0;
@@ -864,31 +1030,16 @@ function ScoreboardScreen({
             <Text style={[styles.hint, { marginTop: 8 }]}>لا توجد جولات مسجلة بعد.</Text>
           </View>
         ) : (
-          <View style={styles.card}>
-            {state.rounds.slice().reverse().map((r, idx) => {
-              const roundNum = state.rounds.length - idx;
-              return (
-                <View key={r.id} style={styles.historyRow}>
-                  <Text style={styles.historyBadge}>{`ج${roundNum}`}</Text>
-                  <View style={{ flex: 1 }}>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                      {state.players.map((pl) => (
-                        <View key={pl.id} style={styles.historyChip}>
-                          <Text style={styles.historyChipName} numberOfLines={1}>{pl.name}</Text>
-                          <Text style={[
-                            styles.historyChipScore,
-                            { color: (r.scores[pl.id] ?? 0) < 0 ? C.primary : C.text },
-                          ]}>
-                            {fmt(r.scores[pl.id] ?? 0)}
-                          </Text>
-                        </View>
-                      ))}
-                    </ScrollView>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
+          <ScoreTable
+            C={C}
+            players={state.players}
+            rounds={state.rounds}
+            totals={totals}
+            leaderId={leaderId}
+            loserId={loserId}
+            onEditCell={onEditCell}
+            onRenamePlayer={onRenamePlayer}
+          />
         )}
       </ScrollView>
 
