@@ -1,10 +1,34 @@
 // المساعد الصوتي (OpenAI Realtime عبر WebRTC) — للويب فقط.
 // الحسابات كلها تتم في السيرفر عبر أداة konkan، والنموذج لا يحسب بنفسه.
-import { API_BASE, callKonkan, RemoteState } from "@/src/utils/konkanSync";
+import { API_BASE, callKonkan, KonkanResponse, RemoteState } from "@/src/utils/konkanSync";
 
 export type VoiceStatus = "connecting" | "live" | "closed" | "error";
 
 export type VoiceHandle = { stop: () => void };
+
+// الجملة التي ينطقها المساعد بعد العملية: تُبنى هنا من أرقام السيرفر فتكون دقيقة دائمًا.
+function numWord(n: number): string {
+  return n < 0 ? `ناقص ${Math.abs(n)}` : `${n}`;
+}
+
+export function buildSpeech(action: string, r: KonkanResponse): string | null {
+  if (!r.ok) return null; // الخطأ يشرحه المساعد بنفسه
+  const sm: any = r.summary;
+  if (action === "start" || action === "rename") return "تمام";
+  if (action === "round" || action === "edit" || action === "undo") {
+    const totals: { name: string; total: number }[] = Array.isArray(sm?.totals) ? [...sm.totals] : [];
+    if (!totals.length) return "تمام";
+    totals.sort((a, b) => a.total - b.total);
+    let line = "تمام. " + totals.map((t) => `${t.name} ${numWord(t.total)}`).join("، ") + ".";
+    if (sm?.game_over && sm?.leader_lowest_score) {
+      line += ` انتهت اللعبة، والفائز ${sm.leader_lowest_score}.`;
+    } else if (sm?.leader_lowest_score) {
+      line += ` المتصدر ${sm.leader_lowest_score}.`;
+    }
+    return line;
+  }
+  return null; // status وغيرها: يجيب المساعد على السؤال بنفسه
+}
 
 export function voiceSupported(): boolean {
   return (
@@ -71,10 +95,11 @@ export async function startKonkanVoice(opts: {
     };
 
     const seenCalls = new Set<string>();
-    let inflight: Promise<void>[] = [];
+    let inflight: Promise<string | null>[] = [];
 
-    const runCall = async (callId: string, name: string, rawArgs: string) => {
+    const runCall = async (callId: string, name: string, rawArgs: string): Promise<string | null> => {
       let output: unknown;
+      let say: string | null = null;
       if (name !== "konkan") {
         output = { error: "unknown_tool" };
       } else {
@@ -86,6 +111,7 @@ export async function startKonkanVoice(opts: {
         }
         const r = await callKonkan(secret, args);
         if (r.state) onState(r.state);
+        say = buildSpeech(String(args.action || ""), r);
         output = r.ok
           ? { ok: true, summary: r.summary, edited: r.body?.edited }
           : { error: r.error || "failed", details: r.body && typeof r.body === "object" ? r.body : undefined };
@@ -94,6 +120,7 @@ export async function startKonkanVoice(opts: {
         type: "conversation.item.create",
         item: { type: "function_call_output", call_id: callId, output: JSON.stringify(output) },
       });
+      return say;
     };
 
     dc.onmessage = (ev) => {
@@ -116,8 +143,25 @@ export async function startKonkanVoice(opts: {
             const batch = inflight;
             inflight = [];
             Promise.all(batch)
-              .catch(() => {})
-              .then(() => send({ type: "response.create" }));
+              .catch(() => [] as (string | null)[])
+              .then((says) => {
+                const say = (says || []).filter((x): x is string => !!x).pop();
+                if (say) {
+                  // نأمر المساعد بنطق الجملة حرفيًا (أرقامها من السيرفر) ونمنعه من استدعاء أدوات أخرى
+                  send({
+                    type: "response.create",
+                    response: {
+                      tool_choice: "none",
+                      instructions:
+                        "انطق الجملة التالية حرفيًا بالعربية بلهجة سعودية، دون أي كلمة قبلها أو بعدها ودون أي تغيير في الأسماء أو الأرقام: «" +
+                        say +
+                        "»",
+                    },
+                  });
+                } else {
+                  send({ type: "response.create" });
+                }
+              });
           }
           break;
         }
