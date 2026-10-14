@@ -70,7 +70,10 @@ const STORAGE_KEY = "konkan_state_v1" + KEY_SUFFIX;
 const THEME_KEY = "konkan_theme_v1" + KEY_SUFFIX;
 const SAVED_PLAYERS_KEY = "konkan_saved_players_v1" + KEY_SUFFIX;
 
-const QUICK_SCORES = [-30, -60, 25, 100, 125, 200];
+// لون تنبيه اللاعب القريب من الحد (برتقالي، يصلح للوضعين الفاتح والداكن)
+const NEAR_LIMIT_COLOR = "#F4A261";
+
+const QUICK_SCORES =[-30, -60, 25, 100, 125, 200];
 
 // Arabic-Indic digits helper (optional). Keep Latin so negatives render clearly.
 const fmt = (n: number) => `${n}`;
@@ -147,6 +150,33 @@ export default function Index() {
     if (!hydrated) return;
     storage.setItem(SAVED_PLAYERS_KEY, JSON.stringify(savedPlayers));
   }, [savedPlayers, hydrated]);
+
+  // إبقاء الشاشة مضيئة أثناء اللعب (ويب فقط، حيث يدعمه المتصفح)
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof navigator === "undefined") return;
+    const nav: any = navigator;
+    if (!nav.wakeLock || typeof nav.wakeLock.request !== "function") return;
+    let sentinel: any = null;
+    let cancelled = false;
+    const acquire = async () => {
+      try {
+        if (cancelled || document.visibilityState !== "visible") return;
+        sentinel = await nav.wakeLock.request("screen");
+      } catch {}
+    };
+    acquire();
+    const onVis = () => {
+      if (document.visibilityState === "visible") acquire();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVis);
+      try {
+        sentinel?.release?.();
+      } catch {}
+    };
+  }, []);
 
   // Totals
   const totals = useMemo(() => {
@@ -1001,6 +1031,9 @@ function ScoreboardScreen({
             const isLeader = pl.id === leaderId && state.rounds.length > 0;
             const isLoser = pl.id === loserId && state.rounds.length > 0 && leaderId !== loserId;
             const total = totals[pl.id] ?? 0;
+            // قريب من الحد: ضمن آخر 10% من الحد (وبحد أدنى 30 نقطة) ولم تنتهِ اللعبة
+            const nearMargin = Math.max(30, Math.round(state.threshold * 0.1));
+            const nearLimit = !gameOver && total > 0 && total >= state.threshold - nearMargin;
             const draft = roundDraft[pl.id];
             const hasDraftVal = draft !== undefined;
             return (
@@ -1010,6 +1043,7 @@ function ScoreboardScreen({
                 style={[
                   styles.playerCard,
                   isLeader && { borderColor: C.primary, backgroundColor: C.primarySoft },
+                  nearLimit && !isLoser && { borderColor: NEAR_LIMIT_COLOR, backgroundColor: "rgba(244,162,97,0.14)" },
                   isLoser && { borderColor: C.danger, backgroundColor: C.dangerSoft },
                 ]}
                 testID={`player-card-${pl.id}`}
@@ -1017,11 +1051,13 @@ function ScoreboardScreen({
                 <View style={{ flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between" }}>
                   <Text style={styles.playerName} numberOfLines={1}>{pl.name}</Text>
                   {isLeader && <Ionicons name="trophy" size={14} color={C.primary} />}
+                  {nearLimit && !isLoser && <Ionicons name="flame" size={14} color={NEAR_LIMIT_COLOR} />}
                   {isLoser && <Ionicons name="warning" size={14} color={C.danger} />}
                 </View>
                 <Text style={[
                   styles.playerTotal,
                   isLeader && { color: C.primary },
+                  nearLimit && !isLoser && { color: NEAR_LIMIT_COLOR },
                   isLoser && { color: C.danger },
                 ]}>{fmt(total)}</Text>
                 {hasDraftVal ? (
