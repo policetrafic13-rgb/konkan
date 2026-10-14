@@ -21,11 +21,16 @@ export function buildSpeech(action: string, r: KonkanResponse): string | null {
     totals.sort((a, b) => a.total - b.total);
     let line = "تمام. " + totals.map((t) => `${t.name} ${numWord(t.total)}`).join("، ") + ".";
     if (sm?.game_over && sm?.leader_lowest_score) {
-      line += ` انتهت اللعبة، والفائز ${sm.leader_lowest_score}.`;
+      line += ` انتهت اللعبة، والريشة ${sm.leader_lowest_score}. كم لاعب سيخرج؟`;
     } else if (sm?.leader_lowest_score) {
-      line += ` المتصدر ${sm.leader_lowest_score}.`;
+      line += ` الريشة ${sm.leader_lowest_score}.`;
     }
     return line;
+  }
+  if (action === "exits") {
+    const names: string[] = Array.isArray((r.body as any)?.exits) ? (r.body as any).exits : [];
+    if (!names.length) return null;
+    return names.map((n) => `${n}، مع السلامة.`).join(" ");
   }
   return null; // status وغيرها: يجيب المساعد على السؤال بنفسه
 }

@@ -28,8 +28,10 @@ export function useKonkanAssistant(params: {
   hydrated: boolean;
   savedPlayers: string[];
   setSavedPlayers: (v: string[]) => void;
+  // false في النسخة الكتابية: لا مفتاح، لا مزامنة، لا صوت
+  enabled?: boolean;
 }) {
-  const { state, setState, hydrated, savedPlayers, setSavedPlayers } = params;
+  const { state, setState, hydrated, savedPlayers, setSavedPlayers, enabled = true } = params;
 
   const [secret, setSecretState] = useState("");
   const [secretLoaded, setSecretLoaded] = useState(false);
@@ -54,6 +56,10 @@ export function useKonkanAssistant(params: {
 
   // ---- تحميل المفتاح ----
   useEffect(() => {
+    if (!enabled) {
+      setSecretLoaded(true);
+      return;
+    }
     (async () => {
       const fromUrl = Platform.OS === "web" ? takeSecretFromUrl() : null;
       if (fromUrl) await saveSecret(fromUrl);
@@ -61,7 +67,7 @@ export function useKonkanAssistant(params: {
       setSecretState(s);
       setSecretLoaded(true);
     })();
-  }, []);
+  }, [enabled]);
 
   const setSecret = useCallback(async (s: string) => {
     const clean = s.trim();

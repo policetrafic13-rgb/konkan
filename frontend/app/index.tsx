@@ -59,9 +59,16 @@ type GameState = {
   threshold: 700 | 1000;
   started: boolean;
 };
-const STORAGE_KEY = "konkan_state_v1";
-const THEME_KEY = "konkan_theme_v1";
-const SAVED_PLAYERS_KEY = "konkan_saved_players_v1";
+// النسخة الكتابية (الرابط العام) تبنى بدون المساعد؛ نسخة المساعد تبنى بـ EXPO_PUBLIC_ASSISTANT=1
+const ASSISTANT_ENABLED = process.env.EXPO_PUBLIC_ASSISTANT === "1";
+
+// نسخة المساعد (/konkan/ai/) تحفظ بياناتها بمفاتيح مستقلة حتى لا تتداخل
+// مع النسخة الكتابية (/konkan/) لأن الرابطين على نفس النطاق ويتشاركان التخزين.
+// النسخة الكتابية تبقى بالمفاتيح القديمة كما هي لتحتفظ ببيانات من وزّعت لهم الرابط.
+const KEY_SUFFIX = ASSISTANT_ENABLED ? "_ai" : "";
+const STORAGE_KEY = "konkan_state_v1" + KEY_SUFFIX;
+const THEME_KEY = "konkan_theme_v1" + KEY_SUFFIX;
+const SAVED_PLAYERS_KEY = "konkan_saved_players_v1" + KEY_SUFFIX;
 
 const QUICK_SCORES = [-30, -60, 25, 100, 125, 200];
 
@@ -172,7 +179,14 @@ export default function Index() {
   }, [state.players, totals]);
 
   // المساعد الصوتي + المزامنة مع السيرفر
-  const assistant = useKonkanAssistant({ state, setState, hydrated, savedPlayers, setSavedPlayers });
+  const assistant = useKonkanAssistant({
+    state,
+    setState,
+    hydrated,
+    savedPlayers,
+    setSavedPlayers,
+    enabled: ASSISTANT_ENABLED,
+  });
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // تعديل نقاط لاعب واحد في جولة محددة (بالضغط على الرقم في الجدول)
@@ -438,7 +452,9 @@ export default function Index() {
               color={C.primary}
             />
           </TouchableOpacity>
-          <AssistantHeaderButtons C={C} a={assistant} onOpenSettings={() => setSettingsOpen(true)} />
+          {ASSISTANT_ENABLED ? (
+            <AssistantHeaderButtons C={C} a={assistant} onOpenSettings={() => setSettingsOpen(true)} />
+          ) : null}
         </View>
         <View style={{ flex: 1, alignItems: "flex-end" }}>
           <Text style={styles.title}>حاسبة الكونكان السعودية</Text>
@@ -448,7 +464,7 @@ export default function Index() {
         </View>
       </View>
 
-      <AssistantBanner C={C} a={assistant} />
+      {ASSISTANT_ENABLED ? <AssistantBanner C={C} a={assistant} /> : null}
 
       {!state.started ? (
         <SetupScreen
@@ -484,12 +500,14 @@ export default function Index() {
         />
       )}
 
-      <AssistantSettingsModal
-        C={C}
-        a={assistant}
-        visible={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-      />
+      {ASSISTANT_ENABLED ? (
+        <AssistantSettingsModal
+          C={C}
+          a={assistant}
+          visible={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+        />
+      ) : null}
 
       {/* Rename a player mid-game */}
       <Modal visible={!!renameId} transparent animationType="fade" onRequestClose={() => setRenameId(null)}>
@@ -690,7 +708,7 @@ export default function Index() {
           <View style={styles.gameOverInner}>
             <Ionicons name="trophy" size={22} color={C.primary} />
             <Text style={styles.gameOverText}>
-              {`انتهت اللعبة! الفائز: ${state.players.find((pl) => pl.id === leaderId)?.name ?? ""}`}
+              {`انتهت اللعبة! الريشة: ${state.players.find((pl) => pl.id === leaderId)?.name ?? ""}`}
             </Text>
           </View>
         </View>

@@ -1,18 +1,23 @@
 #!/usr/bin/env node
-// يبني نسخة الويب لنشرها على GitHub Pages تحت المسار /konkan
-// الاستخدام (من مجلد frontend):  node scripts/build-web-gh.js
-// الناتج: مجلد dist جاهز للنسخ إلى فرع gh-pages.
+// يبني نسخة الويب لنشرها على GitHub Pages.
+// الاستخدام (من مجلد frontend):
+//   النسخة الكتابية (الرابط العام /konkan/):   node scripts/build-web-gh.js
+//   نسخة المساعد (/konkan/ai/):                 node scripts/build-web-gh.js --assistant
+// الناتج: مجلد dist (للكتابية) أو dist-ai (للمساعد)، جاهز للنسخ إلى فرع gh-pages.
 // لا يغيّر app.json بشكل دائم: يضيف baseUrl مؤقتًا ثم يعيد الملف كما كان.
 
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
+const withAssistant = process.argv.includes("--assistant");
+const BASE_URL = withAssistant ? "/konkan/ai" : "/konkan";
+const OUT_NAME = withAssistant ? "dist-ai" : "dist";
+const TITLE = "حاسبة الكونكان";
+
 const root = path.resolve(__dirname, "..");
 const appJsonPath = path.join(root, "app.json");
-const distDir = path.join(root, "dist");
-const BASE_URL = "/konkan";
-const TITLE = "حاسبة الكونكان";
+const distDir = path.join(root, OUT_NAME);
 
 const original = fs.readFileSync(appJsonPath, "utf8");
 let exitCode = 0;
@@ -25,12 +30,16 @@ try {
   fs.rmSync(distDir, { recursive: true, force: true });
 
   const cmd = process.platform === "win32" ? "npx.cmd" : "npx";
-  const r = spawnSync(cmd, ["expo", "export", "--platform", "web", "--output-dir", "dist"], {
-    cwd: root,
-    stdio: "inherit",
-    shell: process.platform === "win32",
-    env: { ...process.env, CI: "1" },
-  });
+  const r = spawnSync(
+    cmd,
+    ["expo", "export", "--platform", "web", "--clear", "--output-dir", OUT_NAME],
+    {
+      cwd: root,
+      stdio: "inherit",
+      shell: process.platform === "win32",
+      env: { ...process.env, CI: "1", EXPO_PUBLIC_ASSISTANT: withAssistant ? "1" : "0" },
+    }
+  );
   if (r.status !== 0) throw new Error("expo export failed (exit " + r.status + ")");
 
   // عنوان الصفحة
@@ -42,11 +51,13 @@ try {
   // GitHub Pages: منع معالجة Jekyll لمجلد _expo
   fs.writeFileSync(path.join(distDir, ".nojekyll"), "");
 
-  // تحقق أن المسارات تبدأ بـ /konkan/
+  // تحقق أن المسارات تبدأ بالمسار الصحيح
   if (!html.includes(`src="${BASE_URL}/_expo/`)) {
     throw new Error("baseUrl was not applied to index.html; do not publish this build");
   }
-  console.log("\nOK: dist is ready (base path " + BASE_URL + "/)");
+  console.log(
+    "\nOK: " + OUT_NAME + " is ready (base path " + BASE_URL + "/, assistant " + (withAssistant ? "ON" : "OFF") + ")"
+  );
 } catch (e) {
   console.error("\nBUILD FAILED:", e.message);
   exitCode = 1;
